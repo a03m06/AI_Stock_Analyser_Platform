@@ -1,0 +1,44 @@
+# Render Blueprint — place this file at the ROOT of your git repo
+# (the same level as your backend/ and frontend/ folders), then use
+# "New +" -> "Blueprint" in the Render dashboard and point it at this repo.
+#
+# Assumes a repo layout of:
+#   your-repo/
+#     backend/      (FastAPI app, requirements.txt, Procfile live here)
+#     frontend/     (Vite + React app, package.json lives here)
+#     render.yaml
+
+services:
+  # ---------------- Backend: FastAPI ----------------
+  - type: web
+    name: ai-stock-analyser-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.14
+    autoDeploy: true
+
+  # ---------------- Frontend: Vite + React (static site) ----------------
+  - type: web
+    name: ai-stock-analyser-frontend
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        # Update this to your backend's actual Render URL after the
+        # backend service is created (Render fills its own URLs in
+        # after first deploy, so you may need to redeploy the frontend
+        # once you know the backend URL).
+        value: https://ai-stock-analyser-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    autoDeploy: true

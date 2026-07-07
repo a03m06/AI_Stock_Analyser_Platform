@@ -1,0 +1,40 @@
+.company-graph {
+    background: #dbebf5;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px;
+    color: rgb(23, 22, 22);
+}
+
+.graph-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.graph-header h3{
+    font-size: 30px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.period-tabs {
+    display: flex;
+    gap: 6px;
+}
+
+.period-tab {
+    background: #ffffff;
+    color: #191a1c;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.period-tab.active {
+    background: #151779;
+    color: rgb(248, 246, 246);
+}

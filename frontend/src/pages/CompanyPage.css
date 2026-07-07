@@ -1,0 +1,102 @@
+/* CompanyPage.css */
+
+.company-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    color: #2c0a89;
+}
+
+
+/* =========================================
+   COMPANY HEADER
+========================================= */
+
+.company-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgb(244, 244, 245);
+    padding: 20px;
+    border-radius: 10px;
+    margin: 20px;
+}
+
+.company-header h1 {
+    margin: 0;
+    font-size: 30px;
+    font-weight: 700;
+}
+
+
+/* =========================================
+   COMPANY META
+========================================= */
+
+.company-meta {
+    color: rgb(0, 0, 0);
+    margin-top: 6px;
+    font-size: 13px;
+}
+
+
+/* =========================================
+   AI SCORE
+========================================= */
+
+.ai-score-box {
+    text-align: center;
+}
+
+.ai-score-box span {
+    display: block;
+    font-size: 18px;
+    font-weight: 900;
+    color: #2c0a89;
+    margin-bottom: 6px;
+}
+
+.ai-score-box h2 {
+    margin: 0;
+    color: #03690d;
+    font-size: 30px;
+    font-weight: 900;
+}
+
+
+/* =========================================
+   STATS GRID
+========================================= */
+
+.company-stats-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            auto-fill,
+            minmax(160px, 1fr)
+        );
+    gap: 12px;
+    margin: 0 20px 20px;
+}
+
+
+/* =========================================
+   STAT BOX
+========================================= */
+
+.stat-box {
+    background: rgb(244, 244, 245);
+    padding: 12px 14px;
+    border-radius: 8px;
+}
+
+.stat-box-label {
+    display: block;
+    font-size: 15px;
+    color: #000000;
+    margin-bottom: 6px;
+}
+
+.stat-box-value {
+    font-size: 16px;
+    font-weight: 600;
+}
