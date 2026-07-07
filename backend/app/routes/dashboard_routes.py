@@ -6,8 +6,7 @@ from fastapi import APIRouter
 router = APIRouter()
 
 
-# =====================================================
-# NOTE FOR ARSHI:
+
 # The previous version of this endpoint returned fully
 # hardcoded numbers - that's why it never looked "live".
 # This version pulls real index levels and computes real
@@ -43,33 +42,63 @@ INDEX_TICKERS = {
 GAINERS_LOSERS_WATCHLIST_SIZE = 40
 
 _CACHE = {"data": None, "expires_at": 0}
-_CACHE_TTL_SECONDS = 60 * 5  # 5 minutes - "live enough" without hammering Yahoo on every page load
+_CACHE_TTL_SECONDS = 60 * 10  # 10 minutes - fewer hits to Yahoo, still feels "live enough"
+
+
+# =====================================================
+# NOTE: yfinance calls occasionally fail wholesale when
+# run from a cloud host (Yahoo rate-limits/blocks known
+# datacenter IP ranges more aggressively than home IPs).
+# When that happens we now fall back to the last
+# successfully fetched snapshot instead of showing 0%
+# everywhere, and flag is_live=False so the frontend can
+# make that visible if it wants to.
+# =====================================================
+
+_LAST_GOOD = {"data": None, "captured_at": None}
 
 
 def _get_index_changes():
+    """Fetches all indices in a single batched yf.download call
+    instead of 5 separate yf.Ticker(...).history() calls - fewer
+    round trips to Yahoo means less chance of hitting a rate limit.
+    """
 
-    changes = {}
+    changes = {name: {"change": 0, "value": 0} for name in INDEX_TICKERS}
 
-    for name, ticker in INDEX_TICKERS.items():
+    try:
+        tickers = list(INDEX_TICKERS.values())
 
-        try:
-            hist = yf.Ticker(ticker).history(period="2d", auto_adjust=True)
+        data = yf.download(
+            tickers=tickers,
+            period="2d",
+            group_by="ticker",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
 
-            if len(hist) < 2:
-                changes[name] = {"change": 0, "value": 0}
-                continue
+        for name, ticker in INDEX_TICKERS.items():
 
-            prev_close = float(hist["Close"].iloc[-2])
-            last_close = float(hist["Close"].iloc[-1])
+            try:
+                closes = data[ticker]["Close"].dropna()
 
-            changes[name] = {
-                "change": round(((last_close - prev_close) / prev_close) * 100, 2),
-                "value": round(last_close, 2),
-            }
+                if len(closes) < 2:
+                    continue
 
-        except Exception as e:
-            print("INDEX FETCH ERROR:", name, e)
-            changes[name] = {"change": 0, "value": 0}
+                prev_close = float(closes.iloc[-2])
+                last_close = float(closes.iloc[-1])
+
+                changes[name] = {
+                    "change": round(((last_close - prev_close) / prev_close) * 100, 2),
+                    "value": round(last_close, 2),
+                }
+
+            except Exception as e:
+                print("INDEX PARSE ERROR:", name, e)
+
+    except Exception as e:
+        print("INDEX FETCH ERROR:", e)
 
     return changes
 
@@ -177,6 +206,21 @@ def _get_market_sentiment(indices):
     return "NEUTRAL"
 
 
+def _looks_like_real_data(indices, top_gainers, top_losers):
+    """A crude but effective check: if every index came back as 0/0
+    AND we got no gainers/losers, that's not "the market is flat" -
+    that's yfinance failing wholesale (e.g. Yahoo blocking this
+    server's IP). Real flat/holiday days would still have nonzero
+    index *values* even if change is 0.
+    """
+
+    any_real_value = any(
+        idx["value"] not in (0, None) for idx in indices.values()
+    )
+
+    return any_real_value or bool(top_gainers) or bool(top_losers)
+
+
 @router.get("/api/dashboard")
 def market_dashboard():
 
@@ -189,16 +233,53 @@ def market_dashboard():
     top_gainers, top_losers = _get_gainers_losers()
     market_sentiment = _get_market_sentiment(indices)
 
-    result = {
-        "indices": indices,
-        "top_gainers": top_gainers,
-        "top_losers": top_losers,
-        "market_sentiment": market_sentiment,
-        "is_live": True,
-        "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
+    fetch_succeeded = _looks_like_real_data(indices, top_gainers, top_losers)
 
-    _CACHE["data"] = result
-    _CACHE["expires_at"] = now + _CACHE_TTL_SECONDS
+    if fetch_succeeded:
+        result = {
+            "indices": indices,
+            "top_gainers": top_gainers,
+            "top_losers": top_losers,
+            "market_sentiment": market_sentiment,
+            "is_live": True,
+            "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        _LAST_GOOD["data"] = result
+        _LAST_GOOD["captured_at"] = result["last_updated"]
+
+        # Real data - safe to trust it for the full TTL
+        _CACHE["data"] = result
+        _CACHE["expires_at"] = now + _CACHE_TTL_SECONDS
+
+    elif _LAST_GOOD["data"] is not None:
+        # Fresh fetch failed - serve the last snapshot that actually
+        # worked, but label it clearly as not live, and keep the
+        # original timestamp so it's obvious it's stale.
+        result = {
+            **_LAST_GOOD["data"],
+            "is_live": False,
+            "last_updated": _LAST_GOOD["captured_at"],
+        }
+
+        # Don't cache this for the full TTL - retry sooner in case
+        # the block/rate-limit was transient.
+        _CACHE["data"] = result
+        _CACHE["expires_at"] = now + 30
+
+    else:
+        # No fetch has ever succeeded yet (e.g. right after a fresh
+        # deploy) - nothing good to fall back to.
+        result = {
+            "indices": indices,
+            "top_gainers": top_gainers,
+            "top_losers": top_losers,
+            "market_sentiment": market_sentiment,
+            "is_live": False,
+            "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        _CACHE["data"] = result
+        _CACHE["expires_at"] = now + 30
 
     return result

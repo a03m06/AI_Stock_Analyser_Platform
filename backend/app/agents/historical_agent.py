@@ -13,6 +13,12 @@ import yfinance as yf
 _CACHE = {}
 _CACHE_TTL_SECONDS = 60 * 30  # 30 minutes
 
+# Separate from the TTL cache above: this never expires on its own,
+# and is only overwritten when a fetch genuinely succeeds. If yfinance
+# fails (e.g. Yahoo blocking this server's IP), we fall back to this
+# instead of showing a blank graph / 0% return.
+_LAST_GOOD = {}
+
 
 def _cache_get(key):
     entry = _CACHE.get(key)
@@ -103,6 +109,7 @@ def get_return(company, period="1y"):
         return cached
 
     yf_period = PERIOD_MAP.get(period, "1y")
+    fetch_failed = False
 
     try:
         stock = yf.Ticker(yahoo_symbol)
@@ -112,12 +119,26 @@ def get_return(company, period="1y"):
             auto_adjust=True
         )
 
-        value = _return_from_history(hist)
+        if hist is None or len(hist) < 2:
+            fetch_failed = True
+            value = 0
+        else:
+            value = _return_from_history(hist)
 
     except Exception as e:
         print(yahoo_symbol, e)
+        fetch_failed = True
         value = 0
 
+    if fetch_failed:
+        # Don't trust/cache a failure - fall back to the last real
+        # value we have for this symbol+period, if any, and retry
+        # the live fetch again next time instead of caching 0 for 30min.
+        if cache_key in _LAST_GOOD:
+            return _LAST_GOOD[cache_key]
+        return 0
+
+    _LAST_GOOD[cache_key] = value
     _cache_set(cache_key, value)
 
     return value
@@ -153,6 +174,8 @@ def get_price_history(company, period="1y"):
     if cached is not None:
         return cached
 
+    fetch_failed = False
+
     try:
         stock = yf.Ticker(yahoo_symbol)
 
@@ -162,6 +185,7 @@ def get_price_history(company, period="1y"):
         )
 
         if hist.empty:
+            fetch_failed = True
             result = []
         else:
             result = [
@@ -174,8 +198,18 @@ def get_price_history(company, period="1y"):
 
     except Exception as e:
         print(yahoo_symbol, e)
+        fetch_failed = True
         result = []
 
+    if fetch_failed:
+        # Same idea as get_return() above - don't cache an empty
+        # result, and prefer showing the last graph we actually
+        # managed to fetch over showing nothing at all.
+        if cache_key in _LAST_GOOD:
+            return _LAST_GOOD[cache_key]
+        return []
+
+    _LAST_GOOD[cache_key] = result
     _cache_set(cache_key, result)
 
     return result
